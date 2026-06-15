@@ -20,6 +20,7 @@ from .book_table import BookTableWidget
 from .edit_panel import MetadataEditPanel
 from .search_dialog import OnlineSearchDialog
 from .convert_dialog import ConvertDialog
+from .rename_dialog import RenameDialog
 from .workers import ScanWorker, ParseWorker
 
 
@@ -140,6 +141,12 @@ class MainWindow(QMainWindow):
         edit_menu.addAction(search_meta_action)
 
         tool_menu = menubar.addMenu("工具(&T)")
+        rename_action = QAction("批量重命名(&R)...", self)
+        rename_action.triggered.connect(self._on_rename_requested)
+        tool_menu.addAction(rename_action)
+
+        tool_menu.addSeparator()
+
         convert_action = QAction("格式转换(&C)...", self)
         convert_action.triggered.connect(lambda: self._on_convert_requested(self.book_table.get_selected_books()))
         tool_menu.addAction(convert_action)
@@ -219,6 +226,18 @@ class MainWindow(QMainWindow):
                         self._editor.save_epub_metadata(book)
                 self.book_table.load_books(self._books)
                 self.statusBar().showMessage(f"已从在线源填充 {len(books)} 本书的元数据")
+
+    def _on_rename_requested(self):
+        if not self._books:
+            QMessageBox.information(self, "提示", "请先扫描或导入电子书")
+            return
+        dialog = RenameDialog(self._books, self)
+        dialog.rename_completed.connect(self._on_rename_completed)
+        dialog.exec()
+
+    def _on_rename_completed(self, count: int):
+        self.book_table.load_books(self._books)
+        self.statusBar().showMessage(f"已重命名 {count} 本书")
 
     def _on_convert_requested(self, books: list):
         if not books:

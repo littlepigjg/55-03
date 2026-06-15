@@ -1,10 +1,12 @@
+import time
 from pathlib import Path
 
-from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtCore import QThread, pyqtSignal, QMutex, QMutexLocker
 
 from ..models import BookMeta
 from ..scanner import BookshelfScanner
 from ..metadata_parser import MetadataParser
+from ..renamer import TransactionalRenamer, RenamePreviewItem, RenameResult
 
 
 class ScanWorker(QThread):
@@ -51,3 +53,49 @@ class ParseWorker(QThread):
                     )
                 )
         self.finished_signal.emit(books)
+
+
+class RenameWorker(QThread):
+    progress = pyqtSignal(int, int, str)
+    finished_signal = pyqtSignal(object)
+    paused_changed = pyqtSignal(bool)
+
+    def __init__(self, items: list):
+        super().__init__()
+        self._items = items
+        self._paused = False
+        self._cancelled = False
+        self._mutex = QMutex()
+
+    def pause(self):
+        with QMutexLocker(self._mutex):
+            self._paused = True
+        self.paused_changed.emit(True)
+
+    def resume(self):
+        with QMutexLocker(self._mutex):
+            self._paused = False
+        self.paused_changed.emit(False)
+
+    def cancel(self):
+        with QMutexLocker(self._mutex):
+            self._cancelled = True
+            self._paused = False
+
+    def is_paused(self) -> bool:
+        with QMutexLocker(self._mutex):
+            return self._paused
+
+    def is_cancelled(self) -> bool:
+        with QMutexLocker(self._mutex):
+            return self._cancelled
+
+    def run(self):
+        renamer = TransactionalRenamer()
+        result = renamer.rename(
+            self._items,
+            progress_callback=lambda c, t, n: self.progress.emit(c, t, n),
+            pause_check=lambda: self.is_paused(),
+            cancel_check=lambda: self.is_cancelled(),
+        )
+        self.finished_signal.emit(result)
