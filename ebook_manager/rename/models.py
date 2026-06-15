@@ -41,8 +41,22 @@ class RenameResult:
     renamed: int = 0
     failed: int = 0
     rolled_back: bool = False
+    rollback_success: int = 0
+    rollback_failed: int = 0
     error_message: str = ""
     failed_items: List[Tuple[str, str]] = field(default_factory=list)
+    rollback_failed_items: List[Tuple[str, str, str]] = field(default_factory=list)
+
+
+@dataclass
+class RollbackResult:
+    success_count: int = 0
+    failed_count: int = 0
+    failed_items: List[Tuple[str, str, str]] = field(default_factory=list)
+
+    @property
+    def all_success(self) -> bool:
+        return self.failed_count == 0
 
 
 INVALID_FILENAME_CHARS = '<>:"/\\|?*'

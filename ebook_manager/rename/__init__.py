@@ -2,6 +2,7 @@ from .models import (
     RegexRule,
     RenamePreviewItem,
     RenameResult,
+    RollbackResult,
     INVALID_FILENAME_CHARS,
     WINDOWS_RESERVED_NAMES,
 )
@@ -21,6 +22,7 @@ __all__ = [
     "RegexRule",
     "RenamePreviewItem",
     "RenameResult",
+    "RollbackResult",
     "INVALID_FILENAME_CHARS",
     "WINDOWS_RESERVED_NAMES",
     "FileNameMetadataExtractor",

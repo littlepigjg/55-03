@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import List, Dict, Optional, Callable, Tuple
 
 from ..models import BookMeta
-from .models import RenamePreviewItem, RenameResult
+from .models import RenamePreviewItem, RenameResult, RollbackResult
 from .name_utils import (
     FileNameTemplate,
     FileNameSanitizer,
@@ -83,28 +83,38 @@ class RenameTransaction:
     def is_empty(self) -> bool:
         return len(self._history) == 0
 
+    @property
+    def size(self) -> int:
+        return len(self._history)
+
     def add(self, item: RenamePreviewItem, old_path: str, new_path: str):
         self._history.append((item, old_path, new_path))
 
     def commit_all(self) -> int:
         return len(self._history)
 
-    def rollback_all(self) -> int:
-        count = 0
+    def rollback_all(self) -> RollbackResult:
+        result = RollbackResult()
         while self._history:
             item, old_path, new_path = self._history.pop()
-            disk_ok = False
             try:
                 long_new = self._make_long_path(new_path)
                 long_old = self._make_long_path(old_path)
-                if os.path.exists(long_new):
-                    os.rename(long_new, long_old)
-                    disk_ok = True
-                    count += 1
-            except Exception:
-                pass
-            item.book.file_path = old_path
-        return count
+                if not os.path.exists(long_new):
+                    result.failed_count += 1
+                    result.failed_items.append(
+                        (item.original_name, new_path, f"文件不存在: {new_path}")
+                    )
+                    continue
+                os.rename(long_new, long_old)
+                item.book.file_path = old_path
+                result.success_count += 1
+            except Exception as e:
+                result.failed_count += 1
+                result.failed_items.append(
+                    (item.original_name, new_path, str(e))
+                )
+        return result
 
     def rollback_one(self) -> Optional[Tuple[str, str]]:
         if not self._history:
@@ -115,10 +125,11 @@ class RenameTransaction:
             long_old = self._make_long_path(old_path)
             if os.path.exists(long_new):
                 os.rename(long_new, long_old)
+                item.book.file_path = old_path
+                return (old_path, new_path)
         except Exception:
             pass
-        item.book.file_path = old_path
-        return (old_path, new_path)
+        return None
 
     @staticmethod
     def _make_long_path(path: str) -> str:
@@ -156,17 +167,35 @@ class TransactionalRenamer:
 
         for i, item in enumerate(to_rename):
             if cancel_check and cancel_check():
-                self._rollback_all()
+                rb = self._rollback_all()
                 result.rolled_back = True
-                result.error_message = "操作已取消，已回滚"
+                result.rollback_success = rb.success_count
+                result.rollback_failed = rb.failed_count
+                result.rollback_failed_items = rb.failed_items
+                if rb.failed_count > 0:
+                    result.error_message = (
+                        f"操作已取消，回滚成功 {rb.success_count} 个，"
+                        f"失败 {rb.failed_count} 个（磁盘/内存不一致！）"
+                    )
+                else:
+                    result.error_message = "操作已取消，已回滚"
                 return result
 
             if pause_check:
                 while pause_check():
                     if cancel_check and cancel_check():
-                        self._rollback_all()
+                        rb = self._rollback_all()
                         result.rolled_back = True
-                        result.error_message = "操作已取消，已回滚"
+                        result.rollback_success = rb.success_count
+                        result.rollback_failed = rb.failed_count
+                        result.rollback_failed_items = rb.failed_items
+                        if rb.failed_count > 0:
+                            result.error_message = (
+                                f"操作已取消，回滚成功 {rb.success_count} 个，"
+                                f"失败 {rb.failed_count} 个（磁盘/内存不一致！）"
+                            )
+                        else:
+                            result.error_message = "操作已取消，已回滚"
                         return result
                     time.sleep(0.1)
 
@@ -179,9 +208,19 @@ class TransactionalRenamer:
             except Exception as e:
                 result.failed += 1
                 result.failed_items.append((item.original_name, str(e)))
-                self._rollback_all()
+                rb = self._rollback_all()
                 result.rolled_back = True
-                result.error_message = f"重命名失败，已回滚: {e}"
+                result.rollback_success = rb.success_count
+                result.rollback_failed = rb.failed_count
+                result.rollback_failed_items = rb.failed_items
+                if rb.failed_count > 0:
+                    result.error_message = (
+                        f"重命名失败: {e}。回滚成功 {rb.success_count} 个，"
+                        f"失败 {rb.failed_count} 个（磁盘/内存不一致，请检查："
+                        f"{'; '.join(x[0] for x in rb.failed_items)}）"
+                    )
+                else:
+                    result.error_message = f"重命名失败，已回滚: {e}"
                 return result
 
         result.success = True
@@ -216,5 +255,5 @@ class TransactionalRenamer:
         self._transaction.add(item, src, dst)
         item.book.file_path = dst
 
-    def _rollback_all(self):
-        self._transaction.rollback_all()
+    def _rollback_all(self) -> RollbackResult:
+        return self._transaction.rollback_all()
