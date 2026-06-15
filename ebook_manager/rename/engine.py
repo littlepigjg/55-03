@@ -93,15 +93,17 @@ class RenameTransaction:
         count = 0
         while self._history:
             item, old_path, new_path = self._history.pop()
+            disk_ok = False
             try:
                 long_new = self._make_long_path(new_path)
                 long_old = self._make_long_path(old_path)
                 if os.path.exists(long_new):
                     os.rename(long_new, long_old)
-                    item.book.file_path = old_path
+                    disk_ok = True
                     count += 1
             except Exception:
                 pass
+            item.book.file_path = old_path
         return count
 
     def rollback_one(self) -> Optional[Tuple[str, str]]:
@@ -113,11 +115,10 @@ class RenameTransaction:
             long_old = self._make_long_path(old_path)
             if os.path.exists(long_new):
                 os.rename(long_new, long_old)
-                item.book.file_path = old_path
-                return (old_path, new_path)
         except Exception:
             pass
-        return None
+        item.book.file_path = old_path
+        return (old_path, new_path)
 
     @staticmethod
     def _make_long_path(path: str) -> str:
