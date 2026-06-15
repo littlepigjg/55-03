@@ -6,7 +6,7 @@ from PyQt6.QtCore import QThread, pyqtSignal, QMutex, QMutexLocker
 from ..models import BookMeta
 from ..scanner import BookshelfScanner
 from ..metadata_parser import MetadataParser
-from ..renamer import TransactionalRenamer, RenamePreviewItem, RenameResult
+from ..rename import TransactionalRenamer, RenamePreviewItem, RenameResult
 
 
 class ScanWorker(QThread):

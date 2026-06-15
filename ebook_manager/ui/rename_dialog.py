@@ -9,7 +9,7 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QBrush
 
 from ..models import BookMeta
-from ..renamer import (
+from ..rename import (
     FileNameTemplate, RenamePreviewGenerator, RenamePreviewItem,
     RegexRule, DefaultRegexRules, FileNameSanitizer
 )
